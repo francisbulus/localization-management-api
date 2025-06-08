@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
-    TranslationKey, TranslationUpdate
+    BulkTranslationUpdate, TranslationKey, TranslationUpdate
 )
 
 from .database import (
@@ -165,4 +165,81 @@ async def update_translation(translation_id: str, update_data: TranslationUpdate
     except Exception as e:
         logger.error(f"Error updating translation {translation_id}: {e}")
         error_detail = f"Failed to update translation: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
+    
+@app.put(
+    "/translations/bulk",
+    tags=["Translations"],
+)
+async def bulk_update_translations(bulk_update: BulkTranslationUpdate):
+    """
+    Bulk update multiple translations in a single request.
+    More efficient than individual updates and provides transactional consistency.
+    """
+    check_supabase_connection()
+
+    if not bulk_update.updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    try:
+        results = {}
+        successful_updates = 0
+        failed_updates = 0
+
+        for translation_id, new_value in bulk_update.updates.items():
+            try:
+                result = (
+                    supabase.table("translations")
+                    .update(
+                        {
+                            "value": new_value,
+                            "updated_by": bulk_update.updated_by,
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .eq("id", translation_id)
+                    .execute()
+                )
+
+                if result.data:
+                    results[translation_id] = {"success": True, "value": new_value}
+                    successful_updates += 1
+                else:
+                    results[translation_id] = {
+                        "success": False,
+                        "error": "Translation not found",
+                    }
+                    failed_updates += 1
+
+            except Exception as update_error:
+                results[translation_id] = {
+                    "success": False,
+                    "error": str(update_error),
+                }
+                failed_updates += 1
+                logger.warning(
+                    f"Failed to update translation {translation_id}: {update_error}"
+                )
+
+        logger.info(
+            f"Bulk update completed: {successful_updates} successful, "
+            f"{failed_updates} failed"
+        )
+
+        return {
+            "success": True,
+            "message": "Bulk update completed",
+            "summary": {
+                "total_attempted": len(bulk_update.updates),
+                "successful_updates": successful_updates,
+                "failed_updates": failed_updates,
+            },
+            "results": results,
+            "updated_by": bulk_update.updated_by,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        logger.error(f"Error in bulk update: {e}")
+        error_detail = f"Bulk update failed: {str(e)}"
         raise HTTPException(status_code=500, detail=error_detail)
