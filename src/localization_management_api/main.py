@@ -1,8 +1,12 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import supabase, check_supabase_connection
+from localization_management_api.models import TranslationKey
+
+from .database import (
+    format_translation_key_response, supabase, check_supabase_connection
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -72,3 +76,43 @@ async def get_localizations(project_id: str, locale: str):
             "locale": locale,
             "localizations": {"error": error_message},
         }
+
+
+@app.get(
+    "/translation-keys/{key_id}",
+    response_model=TranslationKey,
+    tags=["Translation Keys"],
+)
+async def get_translation_key(key_id: str):
+    """Get a single translation key by ID with all its translations."""
+    check_supabase_connection()
+
+    try:
+        result = (
+            supabase.table("translation_keys")
+            .select(
+                """
+                id, key, category, description, created_at, updated_at,
+                translations (
+                    id, language_code, value, updated_at, updated_by
+                )
+                """
+            )
+            .eq("id", key_id)
+            .execute()
+        )
+
+        if not result.data:
+            error_detail = f"Translation key with ID {key_id} not found"
+            raise HTTPException(status_code=404, detail=error_detail)
+
+        formatted_item = format_translation_key_response(result.data[0])
+        logger.info(f"Retrieved translation key: {formatted_item.key}")
+        return formatted_item
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving translation key {key_id}: {e}")
+        error_detail = f"Failed to retrieve translation key: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
