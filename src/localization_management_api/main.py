@@ -31,6 +31,37 @@ app.add_middleware(
 )
 
 
+@app.get("/", tags=["Health"])
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "message": "Helium Localization Manager API",
+        "version": "1.0.0",
+        "status": "running",
+    }
+
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint"""
+    try:
+        check_supabase_connection()
+        _ = supabase.table("translation_keys").select("id").limit(1).execute()
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
 # This is the endpoint to get the localizations for a project and locale
 # It returns a JSON object with the localizations for the project and locale
 @app.get("/localizations/{project_id}/{locale}")
