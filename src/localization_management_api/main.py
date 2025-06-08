@@ -1,8 +1,11 @@
+from datetime import datetime
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from localization_management_api.models import TranslationKey
+from .models import (
+    TranslationKey, TranslationUpdate
+)
 
 from .database import (
     format_translation_key_response, supabase, check_supabase_connection
@@ -115,4 +118,51 @@ async def get_translation_key(key_id: str):
     except Exception as e:
         logger.error(f"Error retrieving translation key {key_id}: {e}")
         error_detail = f"Failed to retrieve translation key: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
+@app.put(
+    "/translations/{translation_id}",
+    tags=["Translations"],
+)
+async def update_translation(translation_id: str, update_data: TranslationUpdate):
+    """Update a single translation value."""
+    check_supabase_connection()
+
+    try:
+        result = (
+            supabase.table("translations")
+            .update(
+                {
+                    "value": update_data.value,
+                    "updated_by": update_data.updated_by,
+                    "updated_at": datetime.now().isoformat(),
+                }
+            )
+            .eq("id", translation_id)
+            .execute()
+        )
+
+        if not result.data:
+            error_detail = f"Translation with ID {translation_id} not found"
+            raise HTTPException(status_code=404, detail=error_detail)
+
+        logger.info(
+            f"Updated translation {translation_id} with new value: "
+            f"{update_data.value}"
+        )
+
+        return {
+            "success": True,
+            "message": "Translation updated successfully",
+            "translation_id": translation_id,
+            "updated_by": update_data.updated_by,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating translation {translation_id}: {e}")
+        error_detail = f"Failed to update translation: {str(e)}"
         raise HTTPException(status_code=500, detail=error_detail)
