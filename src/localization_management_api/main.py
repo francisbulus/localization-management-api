@@ -1,10 +1,12 @@
 from datetime import datetime
 import logging
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
-    BulkTranslationUpdate, TranslationKey, TranslationUpdate
+    BulkTranslationUpdate, TranslationKey, TranslationKeyListResponse,
+    TranslationUpdate
 )
 
 from .database import (
@@ -118,6 +120,53 @@ async def get_translation_key(key_id: str):
     except Exception as e:
         logger.error(f"Error retrieving translation key {key_id}: {e}")
         error_detail = f"Failed to retrieve translation key: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
+@app.get(
+    "/translation-keys",
+    response_model=TranslationKeyListResponse,
+    tags=["Translation Keys"],
+)
+async def get_translation_keys(
+    search: Optional[str] = Query(None, description="Search in translation keys"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Number of results to skip"),
+):
+    """Get all translation keys with their translations. Supports search and filtering."""
+    check_supabase_connection()
+
+    try:
+        query = supabase.table("translation_keys").select(
+            """
+            id, key, category, description, created_at, updated_at,
+            translations (
+                id, language_code, value, updated_at, updated_by
+            )
+            """
+        )
+
+        if search:
+            query = query.ilike("key", f"%{search}%")
+        if category:
+            query = query.eq("category", category)
+
+        query = query.range(offset, offset + limit - 1)
+        result = query.execute()
+
+        formatted_items = [
+            format_translation_key_response(item) for item in result.data
+        ]
+        logger.info(f"Retrieved {len(formatted_items)} translation keys")
+
+        return TranslationKeyListResponse(
+            items=formatted_items,
+            total=len(formatted_items),
+        )
+    except Exception as e:
+        logger.error(f"Failed to retrieve translation keys: {e}")
+        error_detail = f"An unexpected error occurred: {str(e)}"
         raise HTTPException(status_code=500, detail=error_detail)
 
 
