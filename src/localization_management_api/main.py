@@ -258,9 +258,6 @@ async def bulk_update_translations(bulk_update: BulkTranslationUpdate):
     """
     check_supabase_connection()
 
-    if not bulk_update.updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
     try:
         results = {}
         successful_updates = 0
