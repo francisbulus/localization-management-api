@@ -4,3 +4,7 @@ supabase
 python-multipart
 pydantic
 python-dotenv
+
+pytest
+httpx
+pytest-asyncio
